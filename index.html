@@ -1,0 +1,683 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ACOSA · Presupuestos</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f5f6f8;color:#28313b;font:15px Arial,sans-serif}header{background:#ff5100;color:white;padding:24px 5%;display:flex;justify-content:space-between;align-items:center}header b{font-size:32px;letter-spacing:-2px}main{max-width:1250px;margin:auto;padding:24px}h1{font-size:27px}h2{font-size:19px}p{line-height:1.6}.notice{padding:14px;background:#fff1e5;border:1px solid #ffdcc3;border-radius:9px;font-size:13px}label{display:flex;flex-direction:column;gap:7px;font-size:13px}input,select,button{font:inherit;border-radius:7px;padding:10px;border:1px solid #d9dde3}input,select{background:white;min-width:0}button{cursor:pointer;background:#ff5100;color:white;border:0}button:hover{filter:brightness(.95)}button.secondary{background:white;color:#a23c0c;border:1px solid #e4d6ce}.filters,nav,.actions{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin:20px 0}nav button{background:white;color:#666}nav button.active{background:#ff5100;color:white}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.stat,.panel{background:white;border:1px solid #e2e5ea;border-radius:11px;padding:20px}.stat small{color:#747c85}.stat strong{display:block;font-size:25px;margin-top:12px}.panel{margin:20px 0}.overflow{overflow:auto}table{width:100%;border-collapse:collapse;white-space:nowrap;font-size:13px}td,th{padding:13px 10px;text-align:left;border-bottom:1px solid #eee}th{background:#f7f8fa;color:#68717c;font-size:12px}td button{font-size:11px;padding:7px;margin:2px}footer,.note{font-size:12px;color:#747c85;line-height:1.6}.warn{background:#fff1e5;padding:12px;border-radius:7px;color:#974714}dialog{width:min(520px,94vw);border:0;border-radius:14px;padding:25px;box-shadow:0 20px 80px #0003}dialog::backdrop{background:#17202b88}form label{margin:15px 0}form input,form select{width:100%}form .actions{justify-content:flex-end}#error{color:#b83223}#message{min-height:20px;color:#8a3d13;font-size:13px}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #254c87;outline-offset:3px}@media(max-width:700px){main{padding:15px}.stats{grid-template-columns:1fr 1fr}.stat{padding:15px}.stat strong{font-size:21px}header span{font-size:11px;max-width:130px;text-align:right}}@media(max-width:360px){.stats{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header><b>ACOSA</b><span>Panel de presupuesto · USD</span></header>
+<main>
+<p class="notice"><b>DEMOSTRACIÓN PÚBLICA.</b> Datos ficticios; no contiene tu Excel. Sin conexión a Meta ni cuentas de usuario. Los cambios se guardan solo en este navegador.</p>
+<h1>Control de presupuesto digital</h1>
+<div class="filters">
+<label>Mes<input id="month" type="month" value="2026-11"></label>
+<label>País<select id="country"></select></label>
+<button id="newCountry">＋ Agregar país</button>
+</div>
+<div class="stats" id="stats"></div>
+<nav id="tabs"></nav>
+<div class="actions">
+<button id="add"></button>
+<button id="backup" class="secondary">Descargar respaldo</button>
+<button id="restore" class="secondary">Restaurar respaldo</button>
+<input id="file" type="file" accept=".json" hidden>
+</div>
+<p id="message" role="status"></p>
+<section class="panel">
+<h2 id="title"></h2>
+<div id="content"></div>
+</section>
+<footer>Usa datos de prueba. Para conservar cambios, descarga un respaldo. No uses esta demostración como sistema privado del equipo.</footer>
+</main>
+<dialog id="dialog">
+<form id="form">
+<h2 id="formTitle"></h2>
+<div id="fields"></div>
+<p id="error" role="alert"></p>
+<div class="actions">
+<button type="button" class="secondary" id="cancel">Cancelar</button>
+<button>Guardar</button>
+</div>
+</form>
+</dialog>
+<script>
+'use strict';
+
+const $=s=>document.querySelector(s);
+const KEY='acosa-demo-publica-1';
+
+const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({
+  '&':'&amp;','<':'&lt;','>':'&gt;',
+  '"':'&quot;',"'":'&#39;'
+}[c]));
+
+const money=x=>new Intl.NumberFormat('en-US',{
+  style:'currency',currency:'USD'
+}).format(x);
+
+const sum=(a,k)=>a.reduce((t,x)=>t+(Number(x[k])||0),0);
+
+const uid=()=>globalThis.crypto?.randomUUID?.()||
+  Date.now().toString(36)+Math.random().toString(36).slice(2);
+
+const countries=[
+  ['HN','Honduras'],['GT','Guatemala'],
+  ['ESV','El Salvador'],['NI','Nicaragua']
+];
+
+const initial={
+  countries:countries.map(([id,name])=>({id,name})),
+  budgets:countries.map(([id])=>({
+    country:id,month:'2026-11',amount:1000
+  })),
+  campaigns:countries.map(([id])=>({
+    id:id+'-camp',country:id,month:'2026-11',
+    name:'Campaña de ejemplo',objective:'Mensajes',amount:600
+  })),
+  sets:countries.map(([id])=>({
+    id:id+'-set',campaign:id+'-camp',
+    name:'Categoría de ejemplo',
+    assigned:'Equipo de prueba',own:600,brand:0
+  })),
+  brands:[],
+  results:[]
+};
+
+function valid(x){
+  if(!x||![
+    'countries','budgets','campaigns','sets','brands','results'
+  ].every(k=>Array.isArray(x[k])))return false;
+
+  const n=v=>typeof v==='number'&&Number.isFinite(v)&&v>=0;
+
+  return x.countries.length>0&&
+    x.countries.every(c=>
+      typeof c.id==='string'&&typeof c.name==='string'
+    )&&
+    x.budgets.every(b=>n(b.amount))&&
+    x.campaigns.every(c=>
+      n(c.amount)&&x.countries.some(p=>p.id===c.country)
+    )&&
+    x.sets.every(s=>
+      n(s.own)&&n(s.brand)&&
+      x.campaigns.some(c=>c.id===s.campaign)
+    )&&
+    x.brands.every(b=>n(b.amount))&&
+    x.results.every(r=>
+      ['spend','clicks','messages','purchases','value']
+        .every(k=>n(r[k]))&&
+      x.sets.some(s=>s.id===r.set)
+    );
+}
+
+let data;
+
+try{
+  data=JSON.parse(localStorage.getItem(KEY));
+  if(!valid(data))data=structuredClone(initial);
+}catch{
+  data=structuredClone(initial);
+}
+
+let view='home',focus='',submit;
+
+const titles={
+  home:'Presupuesto general por país',
+  campaigns:'Campañas y objetivos',
+  sets:'Conjuntos por categoría',
+  results:'Resultados de Meta',
+  brands:'Fondos de marcas'
+};
+
+const month=()=>$('#month').value;
+const country=()=>$('#country').value;
+
+const name=id=>data.countries.find(c=>c.id===id)?.name||id;
+
+const campaign=id=>data.campaigns.find(c=>c.id===id);
+
+const selectedCampaigns=()=>data.campaigns.filter(c=>
+  c.month===month()&&(!country()||c.country===country())
+);
+
+const selectedSets=()=>{
+  const ids=new Set(selectedCampaigns().map(c=>c.id));
+  return data.sets.filter(s=>ids.has(s.campaign));
+};
+
+const results=ss=>{
+  const ids=new Set(ss.map(s=>s.id));
+  return data.results.filter(r=>
+    ids.has(r.set)&&r.date.slice(0,7)===month()
+  );
+};
+
+function save(){
+  try{
+    localStorage.setItem(KEY,JSON.stringify(data));
+    $('#message').textContent='Guardado en este navegador.';
+  }catch{
+    $('#message').textContent=
+      'No se pudo guardar. Descarga un respaldo antes de cerrar.';
+  }
+  render();
+}
+
+function opts(rows,key,label){
+  return rows.map(r=>
+    `<option value="${esc(r[key])}">${
+      esc(typeof label==='function'?label(r):r[label])
+    }</option>`
+  ).join('');
+}
+
+function button(text,action,id){
+  return `<button data-action="${action}" data-id="${esc(id)}">
+    ${text}
+  </button>`;
+}
+
+function table(headers,rows){
+  return '<div class="overflow"><table><thead><tr>'+
+    headers.map(h=>'<th>'+h+'</th>').join('')+
+    '</tr></thead><tbody>'+
+    (rows.length?
+      rows.map(r=>'<tr>'+
+        r.map(v=>'<td>'+v+'</td>').join('')+
+      '</tr>').join(''):
+      '<tr><td colspan="'+headers.length+
+      '">Sin registros para esta selección.</td></tr>'
+    )+'</tbody></table></div>';
+}
+
+function render(){
+  const current=country();
+
+  $('#country').innerHTML=
+    '<option value="">Todos los países</option>'+
+    opts(data.countries,'id','name');
+
+  $('#country').value=current;
+
+  const cs=selectedCampaigns();
+  const ss=selectedSets();
+  const rr=results(ss);
+
+  const bs=data.brands.filter(b=>
+    b.month===month()&&(!country()||b.country===country())
+  );
+
+  const own=sum(data.budgets.filter(b=>
+    b.month===month()&&(!country()||b.country===country())
+  ),'amount');
+
+  const brands=sum(bs,'amount');
+  const spent=sum(rr,'spend');
+
+  $('#stats').innerHTML=[
+    ['Presupuesto propio',own],
+    ['Fondos de marcas',brands],
+    ['Presupuesto total',own+brands],
+    ['Saldo disponible',own+brands-spent]
+  ].map(([label,n])=>
+    '<article class="stat"><small>'+label+
+    '</small><strong>'+money(n)+'</strong></article>'
+  ).join('');
+
+  $('#tabs').innerHTML=Object.keys(titles).map(v=>
+    '<button data-view="'+v+'" class="'+
+    (view===v?'active':'')+'">'+({
+      home:'Inicio',campaigns:'Campañas',
+      sets:'Conjuntos',results:'Resultados',
+      brands:'Fondos marcas'
+    }[v])+'</button>'
+  ).join('');
+
+  $('#title').textContent=titles[view];
+
+  $('#add').textContent={
+    home:'Editar presupuesto del país',
+    campaigns:'＋ Nueva campaña',
+    sets:'＋ Nuevo conjunto',
+    results:'＋ Registrar resultado',
+    brands:'＋ Aporte de marca'
+  }[view];
+
+  let html='';
+
+  if(view==='home'){
+    html=table([
+      'País','Mes','Propios USD',
+      'Marcas USD','Total USD','Secciones'
+    ],data.countries.filter(c=>
+      !country()||c.id===country()
+    ).map(c=>{
+      const own=data.budgets.find(b=>
+        b.country===c.id&&b.month===month()
+      )?.amount||0;
+
+      const brands=sum(bs.filter(b=>b.country===c.id),'amount');
+
+      return [
+        esc(c.name),esc(month()),money(own),
+        money(brands),money(own+brands),
+        button('Presupuesto','budget',c.id)+
+        ['campaigns','sets','results','brands'].map(v=>
+          button({
+            campaigns:'Campañas',sets:'Conjuntos',
+            results:'Resultados',brands:'Fondos marcas'
+          }[v],v,c.id)
+        ).join('')
+      ];
+    }));
+  }
+
+  if(view==='campaigns'){
+    html=table([
+      'País','Campaña','Objetivo','Propios USD',
+      'Marcas USD','Gasto USD','Saldo USD',
+      'Ejecución','Detalle'
+    ],cs.map(c=>{
+      const sets=ss.filter(s=>s.campaign===c.id);
+      const brand=sum(sets,'brand');
+      const spent=sum(results(sets),'spend');
+      const total=c.amount+brand;
+
+      return [
+        esc(name(c.country)),esc(c.name),esc(c.objective),
+        money(c.amount),money(brand),money(spent),
+        money(total-spent),
+        total?(100*spent/total).toFixed(1)+'%':'—',
+        button('Ver conjuntos','detail',c.id)
+      ];
+    }));
+  }
+
+  if(view==='sets'){
+    const list=cs.filter(c=>!focus||c.id===focus);
+
+    html=(focus?button('Ver todas las campañas','all',''):'')+
+      list.map(c=>{
+        const rows=ss.filter(s=>s.campaign===c.id);
+        const delta=c.amount-sum(rows,'own');
+
+        return '<h3>'+esc(name(c.country)+' · '+c.name)+'</h3>'+
+          (Math.abs(delta)>.009?
+            '<p class="warn">Fondos propios pendientes de distribuir: '+
+            money(delta)+'</p>':''
+          )+
+          table([
+            'Categoría / conjunto','Asignado a','Propios USD',
+            'Marcas USD','Gasto USD','Saldo USD','Acción'
+          ],rows.map(s=>{
+            const spent=sum(results([s]),'spend');
+            return [
+              esc(s.name),esc(s.assigned),money(s.own),
+              money(s.brand),money(spent),
+              money(s.own+s.brand-spent),
+              button('Editar','editSet',s.id)
+            ];
+          }));
+      }).join('');
+
+    if(!list.length){
+      html='<p>Primero crea una campaña para este país y mes.</p>';
+    }
+  }
+
+  if(view==='results'){
+    const spend=sum(rr,'spend');
+    const clicks=sum(rr,'clicks');
+    const messages=sum(rr,'messages');
+
+    html='<p>CPC: <b>'+
+      (clicks?money(spend/clicks):'—')+
+      '</b> · Costo por mensaje: <b>'+
+      (messages?money(spend/messages):'—')+
+      '</b> · ROAS: <b>'+
+      (spend?(sum(rr,'value')/spend).toFixed(2)+'x':'—')+
+      '</b></p>'+
+      table([
+        'Fecha','País','Conjunto','Anuncio',
+        'Gasto USD','Clics','Mensajes','Compras','Ventas USD'
+      ],rr.map(r=>{
+        const s=data.sets.find(s=>s.id===r.set);
+        return [
+          esc(r.date),esc(name(campaign(s.campaign).country)),
+          esc(s.name),esc(r.ad),money(r.spend),
+          r.clicks,r.messages,r.purchases,money(r.value)
+        ];
+      }));
+  }
+
+  if(view==='brands'){
+    html=table([
+      'País','Mes','Marca','Categoría','Objetivo','Aporte USD'
+    ],bs.map(b=>[
+      esc(name(b.country)),esc(b.month),esc(b.name),
+      esc(b.category),esc(b.objective),money(b.amount)
+    ]))+
+      '<p class="note">Aportes registrados: '+money(brands)+
+      ' · Asignados a conjuntos: '+money(sum(ss,'brand'))+
+      '. Los fondos asignados no se suman nuevamente al presupuesto.</p>';
+  }
+
+  $('#content').innerHTML=html;
+}
+
+function input(key,label,value='',type='text'){
+  return '<label>'+label+'<input name="'+key+
+    '" type="'+type+'" value="'+esc(value)+'" required '+
+    (type==='number'?
+      'min="0" max="100000000" step="0.01"':
+      'maxlength="120"'
+    )+'></label>';
+}
+
+function select(key,label,rows,k,l){
+  return '<label>'+label+'<select name="'+key+'" required>'+
+    opts(rows,k,l)+'</select></label>';
+}
+
+function countryField(){
+  return select('country','País',data.countries,'id','name');
+}
+
+function objectiveField(){
+  return select('objective','Objetivo',[
+    'Tráfico','Conversiones','Mensajes','Alcance','Especial'
+  ].map(id=>({id})),'id','id');
+}
+
+function modal(title,fields,fn,values={}){
+  $('#formTitle').textContent=title;
+  $('#fields').innerHTML=fields;
+  $('#error').textContent='';
+  submit=fn;
+
+  for(const [k,v]of Object.entries(values)){
+    $('#form').elements[k].value=v;
+  }
+
+  $('#dialog').showModal();
+}
+
+function fail(text){
+  $('#error').textContent=text;
+  return false;
+}
+
+function editBudget(id){
+  modal('Presupuesto propio · '+name(id),
+    input('amount','Presupuesto general USD',
+      data.budgets.find(b=>
+        b.country===id&&b.month===month()
+      )?.amount||0,'number'
+    ),
+    d=>{
+      const b=data.budgets.find(b=>
+        b.country===id&&b.month===month()
+      );
+
+      if(b)b.amount=+d.amount;
+      else data.budgets.push({
+        country:id,month:month(),amount:+d.amount
+      });
+
+      return true;
+    }
+  );
+}
+
+function openSet(id){
+  const s=data.sets.find(s=>s.id===id);
+  const cs=selectedCampaigns();
+
+  if(!cs.length)return alert('Primero crea una campaña.');
+
+  modal(s?'Editar conjunto':'Nuevo conjunto',
+    select('campaign','Campaña',cs,'id',
+      c=>name(c.country)+' · '+c.name
+    )+
+    input('name','Categoría / nombre del conjunto',s?.name||'')+
+    input('assigned','Asignado a',s?.assigned||'')+
+    input('own','Fondos propios USD',s?.own||0,'number')+
+    input('brand','Fondos de marcas asignados USD',
+      s?.brand||0,'number'
+    ),
+    d=>{
+      if(s&&s.campaign!==d.campaign){
+        return fail('No cambies la campaña de un conjunto existente.');
+      }
+
+      const value={...d,own:+d.own,brand:+d.brand};
+
+      if(s)Object.assign(s,value);
+      else data.sets.push({id:uid(),...value});
+
+      return true;
+    },
+    {campaign:s?.campaign||focus||cs[0].id}
+  );
+}
+
+$('#newCountry').onclick=()=>modal('Agregar país',
+  input('id','Código de país (2 a 5 letras)')+
+  input('name','Nombre del país')+
+  input('amount','Presupuesto propio del mes USD',0,'number'),
+  d=>{
+    d.id=d.id.toUpperCase();
+
+    if(!/^[A-Z]{2,5}$/.test(d.id)){
+      return fail('Usa un código de 2 a 5 letras.');
+    }
+
+    if(data.countries.some(c=>
+      c.id===d.id||c.name.toLowerCase()===d.name.toLowerCase()
+    )){
+      return fail('Ese país ya existe.');
+    }
+
+    data.countries.push({id:d.id,name:d.name});
+    data.budgets.push({
+      country:d.id,month:month(),amount:+d.amount
+    });
+
+    return true;
+  }
+);
+
+$('#add').onclick=()=>{
+  if(view==='home'){
+    if(!country()){
+      return alert('Selecciona un país o pulsa Presupuesto en su fila.');
+    }
+    return editBudget(country());
+  }
+
+  if(view==='campaigns'){
+    return modal('Nueva campaña',
+      countryField()+
+      input('name','Nombre de campaña')+
+      objectiveField()+
+      input('amount','Presupuesto propio USD',0,'number'),
+      d=>{
+        data.campaigns.push({
+          id:uid(),...d,month:month(),amount:+d.amount
+        });
+        return true;
+      },
+      {country:country()||data.countries[0].id}
+    );
+  }
+
+  if(view==='sets')return openSet();
+
+  if(view==='brands'){
+    return modal('Aporte de marca',
+      countryField()+
+      input('name','Marca')+
+      input('category','Categoría')+
+      objectiveField()+
+      input('amount','Aporte adicional USD',0,'number'),
+      d=>{
+        data.brands.push({
+          id:uid(),...d,month:month(),amount:+d.amount
+        });
+        return true;
+      },
+      {country:country()||data.countries[0].id}
+    );
+  }
+
+  if(view==='results'){
+    const ss=selectedSets();
+
+    if(!ss.length){
+      return alert('Primero crea una campaña y un conjunto.');
+    }
+
+    modal('Registrar resultado',
+      select('set','Conjunto',ss,'id',
+        s=>name(campaign(s.campaign).country)+' · '+
+          campaign(s.campaign).name+' / '+s.name
+      )+
+      input('date','Fecha',month()+'-01','date')+
+      input('ad','ID del anuncio')+
+      [
+        ['spend','Gasto USD'],['clicks','Clics'],
+        ['messages','Mensajes'],['purchases','Compras'],
+        ['value','Valor de compras USD']
+      ].map(([k,l])=>input(k,l,0,'number')).join(''),
+      d=>{
+        if(d.date.slice(0,7)!==month()){
+          return fail('La fecha debe pertenecer al mes seleccionado.');
+        }
+
+        if(data.results.some(r=>
+          r.set===d.set&&r.date===d.date&&r.ad===d.ad
+        )){
+          return fail(
+            'Ese anuncio ya tiene un resultado en esa fecha y conjunto.'
+          );
+        }
+
+        const row={id:uid(),...d};
+
+        for(const k of [
+          'spend','clicks','messages','purchases','value'
+        ]){
+          row[k]=+d[k];
+        }
+
+        data.results.push(row);
+        return true;
+      }
+    );
+  }
+};
+
+$('#form').onsubmit=e=>{
+  e.preventDefault();
+  const d=Object.fromEntries(new FormData(e.target));
+
+  for(const k in d)d[k]=d[k].trim();
+
+  if(submit(d)){
+    $('#dialog').close();
+    save();
+  }
+};
+
+$('#cancel').onclick=()=>$('#dialog').close();
+
+$('#tabs').onclick=e=>{
+  const b=e.target.closest('[data-view]');
+  if(b){
+    view=b.dataset.view;
+    focus='';
+    render();
+  }
+};
+
+$('#content').onclick=e=>{
+  const b=e.target.closest('[data-action]');
+  if(!b)return;
+
+  const {action,id}=b.dataset;
+
+  if(action==='budget')return editBudget(id);
+  if(action==='editSet')return openSet(id);
+
+  if(action==='detail'){
+    view='sets';
+    focus=id;
+    $('#country').value=campaign(id).country;
+  }else if(action==='all'){
+    focus='';
+  }else{
+    view=action;
+    focus='';
+    $('#country').value=id;
+  }
+
+  render();
+};
+
+$('#country').onchange=()=>{
+  focus='';
+  render();
+};
+
+$('#month').onchange=()=>{
+  if(!month())$('#month').value='2026-11';
+  focus='';
+  render();
+};
+
+$('#backup').onclick=()=>{
+  const a=document.createElement('a');
+
+  a.href=URL.createObjectURL(new Blob([
+    JSON.stringify({format:KEY,data},null,2)
+  ],{type:'application/json'}));
+
+  a.download='ACOSA-demo-respaldo.json';
+  a.click();
+
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+};
+
+$('#restore').onclick=()=>$('#file').click();
+
+$('#file').onchange=async e=>{
+  try{
+    const file=e.target.files[0];
+    if(!file)return;
+    if(file.size>10000000)throw Error();
+
+    const backup=JSON.parse(await file.text());
+
+    if(backup.format!==KEY||!valid(backup.data))throw Error();
+
+    if(confirm('¿Reemplazar los datos actuales por este respaldo?')){
+      data=backup.data;
+      $('#country').value='';
+      focus='';
+      save();
+    }
+  }catch{
+    alert('No es un respaldo válido de esta demostración.');
+  }finally{
+    e.target.value='';
+  }
+};
+
+render();
+</script>
+</body>
+</html>
