@@ -13,6 +13,7 @@
 <main>
 <p class="notice"><b>DEMOSTRACIÓN PÚBLICA.</b> Datos ficticios; no contiene tu Excel. Sin conexión a Meta ni cuentas de usuario. Los cambios se guardan solo en este navegador.</p>
 <h1>Control de presupuesto digital</h1>
+<p class="note"><b>Sumas automáticas:</b> conjuntos → campañas → país. Edita los fondos propios y de marcas en cada conjunto; los totales se actualizan al guardar. Países y campañas sin conjuntos empiezan en $0.00.</p>
 <div class="filters">
 <label>Mes<input id="month" type="month" value="2026-11"></label>
 <label>País<select id="country"></select></label>
@@ -59,7 +60,7 @@ const money=x=>new Intl.NumberFormat('en-US',{
   style:'currency',currency:'USD'
 }).format(x);
 
-const sum=(a,k)=>a.reduce((t,x)=>t+(Number(x[k])||0),0);
+const sum=(a,k)=>a.reduce((t,x)=>t+Math.round((Number(x[k])||0)*100),0)/100;
 
 const uid=()=>globalThis.crypto?.randomUUID?.()||
   Date.now().toString(36)+Math.random().toString(36).slice(2);
@@ -69,6 +70,8 @@ const countries=[
   ['ESV','El Salvador'],['NI','Nicaragua']
 ];
 
+// Los campos budgets/amount antiguos se conservan por compatibilidad de respaldos.
+// No intervienen en los totales: solo se suman los montos de los conjuntos.
 const initial={
   countries:countries.map(([id,name])=>({id,name})),
   budgets:countries.map(([id])=>({
@@ -211,11 +214,9 @@ function render(){
     b.month===month()&&(!country()||b.country===country())
   );
 
-  const own=sum(data.budgets.filter(b=>
-    b.month===month()&&(!country()||b.country===country())
-  ),'amount');
-
-  const brands=sum(bs,'amount');
+  // Los conjuntos son la única fuente del presupuesto calculado.
+  const own=sum(ss,'own');
+  const brands=sum(ss,'brand');
   const spent=sum(rr,'spend');
 
   $('#stats').innerHTML=[
@@ -240,7 +241,7 @@ function render(){
   $('#title').textContent=titles[view];
 
   $('#add').textContent={
-    home:'Editar presupuesto del país',
+    home:'Ver conjuntos y montos',
     campaigns:'＋ Nueva campaña',
     sets:'＋ Nuevo conjunto',
     results:'＋ Registrar resultado',
@@ -256,16 +257,13 @@ function render(){
     ],data.countries.filter(c=>
       !country()||c.id===country()
     ).map(c=>{
-      const own=data.budgets.find(b=>
-        b.country===c.id&&b.month===month()
-      )?.amount||0;
-
-      const brands=sum(bs.filter(b=>b.country===c.id),'amount');
+      const countrySets=ss.filter(s=>campaign(s.campaign).country===c.id);
+      const own=sum(countrySets,'own');
+      const brands=sum(countrySets,'brand');
 
       return [
         esc(c.name),esc(month()),money(own),
         money(brands),money(own+brands),
-        button('Presupuesto','budget',c.id)+
         ['campaigns','sets','results','brands'].map(v=>
           button({
             campaigns:'Campañas',sets:'Conjuntos',
@@ -285,11 +283,12 @@ function render(){
       const sets=ss.filter(s=>s.campaign===c.id);
       const brand=sum(sets,'brand');
       const spent=sum(results(sets),'spend');
-      const total=c.amount+brand;
+      const own=sum(sets,'own');
+      const total=own+brand;
 
       return [
         esc(name(c.country)),esc(c.name),esc(c.objective),
-        money(c.amount),money(brand),money(spent),
+        money(own),money(brand),money(spent),
         money(total-spent),
         total?(100*spent/total).toFixed(1)+'%':'—',
         button('Ver conjuntos','detail',c.id)
@@ -303,13 +302,12 @@ function render(){
     html=(focus?button('Ver todas las campañas','all',''):'')+
       list.map(c=>{
         const rows=ss.filter(s=>s.campaign===c.id);
-        const delta=c.amount-sum(rows,'own');
+        const total=sum(rows,'own')+sum(rows,'brand');
 
         return '<h3>'+esc(name(c.country)+' · '+c.name)+'</h3>'+
-          (Math.abs(delta)>.009?
-            '<p class="warn">Fondos propios pendientes de distribuir: '+
-            money(delta)+'</p>':''
-          )+
+          '<p class="note">Total automático de campaña: <b>'+money(total)+
+          '</b> · Propios: '+money(sum(rows,'own'))+
+          ' · Marcas: '+money(sum(rows,'brand'))+'</p>'+
           table([
             'Categoría / conjunto','Asignado a','Propios USD',
             'Marcas USD','Gasto USD','Saldo USD','Acción'
@@ -361,9 +359,9 @@ function render(){
       esc(name(b.country)),esc(b.month),esc(b.name),
       esc(b.category),esc(b.objective),money(b.amount)
     ]))+
-      '<p class="note">Aportes registrados: '+money(brands)+
+      '<p class="note">Aportes registrados: '+money(sum(bs,'amount'))+
       ' · Asignados a conjuntos: '+money(sum(ss,'brand'))+
-      '. Los fondos asignados no se suman nuevamente al presupuesto.</p>';
+      '. El presupuesto del país usa solo los fondos asignados en conjuntos. Los aportes registrados aquí son una referencia y no se suman otra vez.</p>';
   }
 
   $('#content').innerHTML=html;
@@ -411,28 +409,6 @@ function fail(text){
   return false;
 }
 
-function editBudget(id){
-  modal('Presupuesto propio · '+name(id),
-    input('amount','Presupuesto general USD',
-      data.budgets.find(b=>
-        b.country===id&&b.month===month()
-      )?.amount||0,'number'
-    ),
-    d=>{
-      const b=data.budgets.find(b=>
-        b.country===id&&b.month===month()
-      );
-
-      if(b)b.amount=+d.amount;
-      else data.budgets.push({
-        country:id,month:month(),amount:+d.amount
-      });
-
-      return true;
-    }
-  );
-}
-
 function openSet(id){
   const s=data.sets.find(s=>s.id===id);
   const cs=selectedCampaigns();
@@ -467,8 +443,7 @@ function openSet(id){
 
 $('#newCountry').onclick=()=>modal('Agregar país',
   input('id','Código de país (2 a 5 letras)')+
-  input('name','Nombre del país')+
-  input('amount','Presupuesto propio del mes USD',0,'number'),
+  input('name','Nombre del país'),
   d=>{
     d.id=d.id.toUpperCase();
 
@@ -484,7 +459,7 @@ $('#newCountry').onclick=()=>modal('Agregar país',
 
     data.countries.push({id:d.id,name:d.name});
     data.budgets.push({
-      country:d.id,month:month(),amount:+d.amount
+      country:d.id,month:month(),amount:0
     });
 
     return true;
@@ -493,21 +468,20 @@ $('#newCountry').onclick=()=>modal('Agregar país',
 
 $('#add').onclick=()=>{
   if(view==='home'){
-    if(!country()){
-      return alert('Selecciona un país o pulsa Presupuesto en su fila.');
-    }
-    return editBudget(country());
+    view='sets';
+    focus='';
+    render();
+    return;
   }
 
   if(view==='campaigns'){
     return modal('Nueva campaña',
       countryField()+
       input('name','Nombre de campaña')+
-      objectiveField()+
-      input('amount','Presupuesto propio USD',0,'number'),
+      objectiveField(),
       d=>{
         data.campaigns.push({
-          id:uid(),...d,month:month(),amount:+d.amount
+          id:uid(),...d,month:month(),amount:0
         });
         return true;
       },
@@ -610,7 +584,6 @@ $('#content').onclick=e=>{
 
   const {action,id}=b.dataset;
 
-  if(action==='budget')return editBudget(id);
   if(action==='editSet')return openSet(id);
 
   if(action==='detail'){
