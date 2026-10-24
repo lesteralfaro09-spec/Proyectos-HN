@@ -127,6 +127,7 @@ try{
 }
 
 let view='home',focus='',submit;
+const VIEW_KEY=KEY+'-navigation';
 
 const titles={
   home:'Presupuesto general por país',
@@ -365,6 +366,13 @@ function render(){
   }
 
   $('#content').innerHTML=html;
+  try{
+    sessionStorage.setItem(VIEW_KEY,JSON.stringify({
+      view,focus,month:month(),country:country()
+    }));
+  }catch{
+    // El panel sigue funcionando si el navegador bloquea este almacenamiento.
+  }
 }
 
 function input(key,label,value='',type='text'){
@@ -651,6 +659,25 @@ $('#file').onchange=async e=>{
   }
 };
 
+// sessionStorage conserva la ubicación al recargar esta pestaña del navegador.
+// Los presupuestos siguen almacenados por separado, en localStorage.
+try{
+  const location=JSON.parse(sessionStorage.getItem(VIEW_KEY));
+  if(location&&Object.hasOwn(titles,location.view)){
+    view=location.view;
+    if(/^\d{4}-(0[1-9]|1[0-2])$/.test(location.month)){
+      $('#month').value=location.month;
+    }
+    $('#country').innerHTML='<option value="">Todos los países</option>'+
+      opts(data.countries,'id','name');
+    $('#country').value=data.countries.some(c=>c.id===location.country)?
+      location.country:'';
+    const active=selectedCampaigns().find(c=>c.id===location.focus);
+    focus=view==='sets'&&active?active.id:'';
+  }
+}catch{
+  // Una ubicación inválida no impide abrir el panel.
+}
 render();
 </script>
 </body>
