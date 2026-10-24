@@ -582,7 +582,8 @@ $('#tabs').onclick=e=>{
   if(b){
     view=b.dataset.view;
     focus='';
-    if(view==='home')$('#country').value='';
+    // La navegación superior siempre abre la vista global.
+    $('#country').value='';
     render();
   }
 };
