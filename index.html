@@ -574,6 +574,7 @@ $('#tabs').onclick=e=>{
   if(b){
     view=b.dataset.view;
     focus='';
+    if(view==='home')$('#country').value='';
     render();
   }
 };
