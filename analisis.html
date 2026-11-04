@@ -1,5 +1,12 @@
-<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ACOSA · Análisis y Presupuesto Lester</title><link rel="stylesheet" href="analisis.css"><script src="vendor/exceljs.min.js" defer></script><script src="analisis.js" defer></script></head><body>
-<header><a href="index.html" class="brand">ACOSA</a><a href="index.html">← Volver al panel de conjuntos</a></header><main>
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ACOSA · Análisis y Presupuesto Lester</title><link rel="stylesheet" href="analisis.css"><link rel="stylesheet" href="navegacion.css"><script src="vendor/exceljs.min.js" defer></script><script src="analisis.js" defer></script></head><body>
+<header class="site-header"><a class="site-brand" href="index.html?view=home" aria-label="ACOSA · Inicio"><img src="assets/acosa-logo.png" alt="ACOSA" width="164" height="60"></a><span>Análisis y Presupuesto Lester · USD</span></header><nav id="module-nav" class="module-nav" aria-label="Navegación principal">
+<a href="index.html?view=home" data-view="home">Inicio</a>
+<a href="index.html?view=campaigns" data-view="campaigns">Campañas</a>
+<a href="index.html?view=sets" data-view="sets">Conjuntos</a>
+<a href="index.html?view=results" data-view="results">Resultados</a>
+<a href="index.html?view=brands" data-view="brands">Fondos de marcas</a>
+<a href="analisis.html" data-module="analysis" class="active" aria-current="page">Análisis y Presupuesto Lester</a>
+</nav><main>
 <div class="notice"><b>Espacio de análisis local.</b> Los archivos se procesan en tu navegador; no se publican en GitHub ni se envían a una IA. No hay sincronización entre usuarios. Descarga respaldos para conservar tu trabajo.</div>
 <div class="heading"><div><p class="eyebrow">META VS. VENTAS</p><h1>Análisis y Presupuesto Lester</h1><p>Datos históricos → sugerencia orientativa → decisión manual.</p></div><div class="actions"><button id="export" class="secondary">Descargar respaldo</button><button id="restore" class="secondary">Restaurar respaldo</button><input id="backup-file" type="file" accept=".json" hidden></div></div>
 <div class="filters"><label>País<select id="country"></select></label><label>Mes de los datos<input id="source-month" type="month" value="2026-10" required></label><label>Mes a presupuestar<input id="target-month" type="month" value="2026-11" required></label></div>
