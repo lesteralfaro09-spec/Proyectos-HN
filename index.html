@@ -11,7 +11,7 @@
 </head>
 <body>
 <header class="site-header"><a class="site-brand" href="index.html?view=home" aria-label="ACOSA · Inicio"><img src="assets/acosa-logo.png" alt="ACOSA" width="164" height="60"></a><span>Panel de presupuesto · USD</span></header>
-<nav id="module-nav" class="module-nav" aria-label="Navegación principal">
+<nav id="module-nav" class="module-nav" aria-label="Navegación global de todos los países">
 <a href="index.html?view=home" data-view="home">Inicio</a>
 <a href="index.html?view=campaigns" data-view="campaigns">Campañas</a>
 <a href="index.html?view=sets" data-view="sets">Conjuntos</a>
@@ -39,7 +39,9 @@
 </div>
 <p id="message" role="status"></p>
 <section class="panel">
+<p class="scope-label" id="scope"></p>
 <h2 id="title"></h2>
+<p class="section-description" id="section-description"></p>
 <div id="content"></div>
 </section>
 <footer>Usa datos de prueba. Para conservar cambios, descarga un respaldo. No uses esta demostración como sistema privado del equipo.</footer>
@@ -190,9 +192,11 @@ function opts(rows,key,label){
 }
 
 function button(text,action,id){
-  return `<button data-action="${action}" data-id="${esc(id)}">
-    ${text}
-  </button>`;
+  const scoped=['campaigns','sets','results','brands'].includes(action);
+  const label=scoped?`${text} de ${name(id)}`:text;
+  return `<button class="${scoped?'country-link':'table-action'}"
+    aria-label="${esc(label)}" title="${esc(label)}"
+    data-action="${action}" data-id="${esc(id)}">${text}</button>`;
 }
 
 function table(headers,rows){
@@ -247,7 +251,13 @@ function render(){
     else a.removeAttribute('aria-current');
   });
 
+  document.body.dataset.view=view;
   $('#title').textContent=titles[view];
+  $('#scope').textContent=country()?`País · ${name(country())}`:'Vista global · Todos los países';
+  $('#section-description').textContent=view==='home'?
+    'Abre las secciones de cada fila para consultar únicamente ese país.':
+    country()?`Información de ${name(country())}. Los accesos superiores abren la vista global.`:
+    'Información consolidada de todos los países para el mes seleccionado.';
 
   $('#add').textContent={
     home:'Ver conjuntos y montos',
@@ -262,7 +272,7 @@ function render(){
   if(view==='home'){
     html=table([
       'País','Mes','Propios USD',
-      'Marcas USD','Total USD','Secciones'
+      'Marcas USD','Total USD','Ver por país'
     ],data.countries.filter(c=>
       !country()||c.id===country()
     ).map(c=>{
@@ -273,12 +283,12 @@ function render(){
       return [
         esc(c.name),esc(month()),money(own),
         money(brands),money(own+brands),
-        ['campaigns','sets','results','brands'].map(v=>
+        '<div class="country-links">'+['campaigns','sets','results','brands'].map(v=>
           button({
             campaigns:'Campañas',sets:'Conjuntos',
             results:'Resultados',brands:'Fondos marcas'
           }[v],v,c.id)
-        ).join('')
+        ).join('')+'</div>'
       ];
     }));
   }
