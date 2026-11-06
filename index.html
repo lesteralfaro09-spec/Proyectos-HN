@@ -17,6 +17,7 @@
 <a href="index.html?view=sets" data-view="sets">Conjuntos</a>
 <a href="index.html?view=results" data-view="results">Resultados</a>
 <a href="index.html?view=brands" data-view="brands">Fondos de marcas</a>
+<a href="index.html?view=history" data-view="history">Histórico mensual</a>
 <a href="analisis.html" data-module="analysis">Análisis y Presupuesto Lester</a>
 </nav>
 <main>
@@ -27,6 +28,7 @@
 <div class="filters">
 <label>Mes<input id="month" type="month" value="2026-11"></label>
 <label>País<select id="country"></select></label>
+<label>Campañas del mes<select id="campaign-status"><option value="active">Solo activas</option><option value="inactive">Solo inactivas</option><option value="all">Todas · histórico</option></select></label>
 <button id="newCountry">＋ Agregar país</button>
 </div>
 <div class="stats" id="stats"></div>
@@ -115,7 +117,9 @@ function valid(x){
     )&&
     x.budgets.every(b=>n(b.amount))&&
     x.campaigns.every(c=>
-      n(c.amount)&&x.countries.some(p=>p.id===c.country)
+      n(c.amount)&&x.countries.some(p=>p.id===c.country)&&
+      /^\d{4}-(0[1-9]|1[0-2])$/.test(c.month)&&
+      (c.active===undefined||typeof c.active==='boolean')
     )&&
     x.sets.every(s=>
       n(s.own)&&n(s.brand)&&
@@ -146,7 +150,8 @@ const titles={
   campaigns:'Campañas y objetivos',
   sets:'Conjuntos por categoría',
   results:'Resultados de Meta',
-  brands:'Fondos de marcas'
+  brands:'Fondos de marcas',
+  history:'Histórico mensual'
 };
 
 const month=()=>$('#month').value;
@@ -156,8 +161,14 @@ const name=id=>data.countries.find(c=>c.id===id)?.name||id;
 
 const campaign=id=>data.campaigns.find(c=>c.id===id);
 
-const selectedCampaigns=()=>data.campaigns.filter(c=>
+// Los respaldos anteriores sin estado se interpretan como activos.
+const isActive=c=>c.active!==false;
+const monthlyCampaigns=()=>data.campaigns.filter(c=>
   c.month===month()&&(!country()||c.country===country())
+);
+const selectedCampaigns=()=>monthlyCampaigns().filter(c=>
+  $('#campaign-status').value==='all'||
+  ($('#campaign-status').value==='inactive'?!isActive(c):isActive(c))
 );
 
 const selectedSets=()=>{
@@ -223,6 +234,10 @@ function render(){
 
   const cs=selectedCampaigns();
   const ss=selectedSets();
+  $('#campaign-status').disabled=view==='history';
+  $('.stats').hidden=view==='history';
+  $('#add').hidden=view==='history';
+  $('#newCountry').hidden=view==='history';
   const rr=results(ss);
 
   const bs=data.brands.filter(b=>
@@ -254,10 +269,12 @@ function render(){
   document.body.dataset.view=view;
   $('#title').textContent=titles[view];
   $('#scope').textContent=country()?`País · ${name(country())}`:'Vista global · Todos los países';
-  $('#section-description').textContent=view==='home'?
+  $('#section-description').textContent=view==='history'?
+    'Todos los meses guardados, con campañas activas e inactivas y sus resultados. Abrir un mes no modifica sus registros.':view==='home'?
     'Abre las secciones de cada fila para consultar únicamente ese país.':
     country()?`Información de ${name(country())}. Los accesos superiores abren la vista global.`:
     'Información consolidada de todos los países para el mes seleccionado.';
+  if(view!=='history')$('#section-description').textContent+=' · '+$('#campaign-status').selectedOptions[0].textContent;
 
   $('#add').textContent={
     home:'Ver conjuntos y montos',
@@ -295,7 +312,7 @@ function render(){
 
   if(view==='campaigns'){
     html=table([
-      'País','Campaña','Objetivo','Propios USD',
+      'País','Campaña','Mes','Estado','Objetivo','Propios USD',
       'Marcas USD','Gasto USD','Saldo USD',
       'Ejecución','Detalle'
     ],cs.map(c=>{
@@ -306,13 +323,36 @@ function render(){
       const total=own+brand;
 
       return [
-        esc(name(c.country)),esc(c.name),esc(c.objective),
+        esc(name(c.country)),esc(c.name),esc(c.month),
+        '<span class="campaign-state '+(isActive(c)?'is-active':'is-inactive')+'">'+(isActive(c)?'Activa':'Inactiva')+'</span>',esc(c.objective),
         money(own),money(brand),money(spent),
         money(total-spent),
         total?(100*spent/total).toFixed(1)+'%':'—',
-        button('Ver conjuntos','detail',c.id)
+        button('Ver conjuntos','detail',c.id)+
+        button(isActive(c)?'Desactivar este mes':'Activar este mes','toggleCampaign',c.id)+
+        button('Copiar a otro mes','copyCampaign',c.id)
       ];
     }));
+  }
+
+  if(view==='history'){
+    const groups=new Map();
+    for(const c of data.campaigns.filter(c=>!country()||c.country===country())){
+      const key=c.month+'|'+c.country;
+      if(!groups.has(key))groups.set(key,{month:c.month,country:c.country,campaigns:[]});
+      groups.get(key).campaigns.push(c);
+    }
+    const rows=[...groups.values()].sort((a,b)=>b.month.localeCompare(a.month)||a.country.localeCompare(b.country));
+    html=table(['Mes','País','Campañas','Activas','Inactivas','Propios USD','Marcas USD','Gasto registrado USD','Consulta'],rows.map(g=>{
+      const ids=new Set(g.campaigns.map(c=>c.id));
+      const sets=data.sets.filter(s=>ids.has(s.campaign));
+      const setIds=new Set(sets.map(s=>s.id));
+      const rr=data.results.filter(r=>setIds.has(r.set)&&r.date.slice(0,7)===g.month);
+      return [esc(g.month),esc(name(g.country)),g.campaigns.length,g.campaigns.filter(isActive).length,g.campaigns.filter(c=>!isActive(c)).length,money(sum(sets,'own')),money(sum(sets,'brand')),money(sum(rr,'spend')),
+        `<button class="table-action" data-action="historyCampaigns" data-month="${esc(g.month)}" data-id="${esc(g.country)}">Campañas del mes</button>`+
+        `<button class="table-action" data-action="historyResults" data-month="${esc(g.month)}" data-id="${esc(g.country)}">Resultados del mes</button>`];
+    }));
+    html+='<p class="note">Los totales históricos incluyen campañas activas e inactivas. Desactivar una campaña no elimina sus conjuntos ni resultados. El histórico de este prototipo se conserva en este navegador; descarga respaldos.</p>';
   }
 
   if(view==='sets'){
@@ -323,7 +363,7 @@ function render(){
         const rows=ss.filter(s=>s.campaign===c.id);
         const total=sum(rows,'own')+sum(rows,'brand');
 
-        return '<h3>'+esc(name(c.country)+' · '+c.name)+'</h3>'+
+        return '<h3>'+esc(name(c.country)+' · '+c.name)+' <span class="campaign-state">'+(isActive(c)?'Activa':'Inactiva')+'</span></h3>'+
           '<p class="note">Total automático de campaña: <b>'+money(total)+
           '</b> · Propios: '+money(sum(rows,'own'))+
           ' · Marcas: '+money(sum(rows,'brand'))+'</p>'+
@@ -386,7 +426,7 @@ function render(){
   $('#content').innerHTML=html;
   try{
     sessionStorage.setItem(VIEW_KEY,JSON.stringify({
-      view,focus,month:month(),country:country()
+      view,focus,month:month(),country:country(),status:$('#campaign-status').value
     }));
   }catch{
     // El panel sigue funcionando si el navegador bloquea este almacenamiento.
@@ -467,6 +507,26 @@ function openSet(id){
   );
 }
 
+function copyCampaign(id){
+  const original=campaign(id);if(!original)return;
+  const [year,m]=original.month.split('-').map(Number);
+  const nextMonth=m===12?`${year+1}-01`:`${year}-${String(m+1).padStart(2,'0')}`;
+  modal('Activar campaña en otro mes',
+    '<p class="note">Se crea una campaña independiente con sus conjuntos y presupuestos. No se copian resultados ni aportes de marcas registrados. El mes original queda intacto.</p>'+
+    input('month','Mes de destino',nextMonth,'month')+
+    input('name','Nombre de la campaña',original.name),
+    d=>{
+      if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(d.month)||d.month===original.month)return fail('Selecciona un mes válido diferente al original.');
+      if(data.campaigns.some(c=>c.country===original.country&&c.month===d.month&&c.name.toLowerCase()===d.name.toLowerCase()))return fail('Ya existe esa campaña en el mes de destino. No se duplicó.');
+      const newId=uid();
+      data.campaigns.push({...original,id:newId,month:d.month,name:d.name,active:true,amount:0});
+      const copied=data.sets.filter(s=>s.campaign===original.id).map(s=>({...s,id:uid(),campaign:newId}));
+      data.sets.push(...copied);
+      $('#month').value=d.month;$('#country').value=original.country;$('#campaign-status').value='active';focus='';view='campaigns';
+      return true;
+    });
+}
+
 $('#newCountry').onclick=()=>modal('Agregar país',
   input('id','Código de país (2 a 5 letras)')+
   input('name','Nombre del país'),
@@ -501,13 +561,16 @@ $('#add').onclick=()=>{
   }
 
   if(view==='campaigns'){
-    return modal('Nueva campaña',
+    return modal('Nueva campaña · '+month(),
       countryField()+
       input('name','Nombre de campaña')+
-      objectiveField(),
+      objectiveField()+
+      select('state','Estado en '+month(),[{id:'active',name:'Activa'},{id:'inactive',name:'Inactiva'}],'id','name'),
       d=>{
+        if(data.campaigns.some(c=>c.country===d.country&&c.month===month()&&c.name.toLowerCase()===d.name.toLowerCase()))return fail('Esa campaña ya existe en el país y mes seleccionados.');
+        const {state,...values}=d;
         data.campaigns.push({
-          id:uid(),...d,month:month(),amount:0
+          id:uid(),...values,month:month(),amount:0,active:state==='active'
         });
         return true;
       },
@@ -598,6 +661,7 @@ $('#cancel').onclick=()=>$('#dialog').close();
 document.querySelectorAll('#module-nav [data-view]').forEach(a=>a.onclick=e=>{
   e.preventDefault();
   view=a.dataset.view;
+  $('#campaign-status').value='active';
   focus='';
   $('#country').value='';
   render();
@@ -610,6 +674,19 @@ $('#content').onclick=e=>{
   const {action,id}=b.dataset;
 
   if(action==='editSet')return openSet(id);
+  if(action==='toggleCampaign'){
+    const c=campaign(id);if(!c)return;
+    if(!confirm(`${isActive(c)?'Desactivar':'Activar'} "${c.name}" solo en ${c.month}? Sus resultados se conservarán.`))return;
+    c.active=!isActive(c);focus='';save();return;
+  }
+  if(action==='copyCampaign')return copyCampaign(id);
+  if(action==='historyCampaigns'||action==='historyResults'){
+    $('#month').value=b.dataset.month;
+    $('#country').value=id;
+    $('#campaign-status').value='all';
+    view=action==='historyResults'?'results':'campaigns';
+    focus='';render();return;
+  }
 
   if(action==='detail'){
     view='sets';
@@ -630,6 +707,8 @@ $('#country').onchange=()=>{
   focus='';
   render();
 };
+
+$('#campaign-status').onchange=()=>{focus='';render();};
 
 $('#month').onchange=()=>{
   if(!month())$('#month').value='2026-11';
@@ -681,6 +760,7 @@ try{
   const location=JSON.parse(sessionStorage.getItem(VIEW_KEY));
   if(location&&Object.hasOwn(titles,location.view)){
     view=location.view;
+    if(['active','inactive','all'].includes(location.status))$('#campaign-status').value=location.status;
     if(/^\d{4}-(0[1-9]|1[0-2])$/.test(location.month)){
       $('#month').value=location.month;
     }
@@ -698,6 +778,7 @@ try{
 const requestedView=new URLSearchParams(window.location.search).get('view');
 if(requestedView&&Object.hasOwn(titles,requestedView)){
   view=requestedView;
+  $('#campaign-status').value='active';
   focus='';
   $('#country').value='';
   const cleanURL=new URL(window.location.href);
