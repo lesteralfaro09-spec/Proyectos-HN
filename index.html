@@ -8,7 +8,7 @@
 *{box-sizing:border-box}body{margin:0;background:#f5f6f8;color:#28313b;font:15px Arial,sans-serif}header{background:#ff5100;color:white;padding:24px 5%;display:flex;justify-content:space-between;align-items:center}header b{font-size:32px;letter-spacing:-2px}main{max-width:1250px;margin:auto;padding:24px}h1{font-size:27px}h2{font-size:19px}p{line-height:1.6}.notice{padding:14px;background:#fff1e5;border:1px solid #ffdcc3;border-radius:9px;font-size:13px}label{display:flex;flex-direction:column;gap:7px;font-size:13px}input,select,button{font:inherit;border-radius:7px;padding:10px;border:1px solid #d9dde3}input,select{background:white;min-width:0}button{cursor:pointer;background:#ff5100;color:white;border:0}button:hover{filter:brightness(.95)}button.secondary{background:white;color:#a23c0c;border:1px solid #e4d6ce}.filters,nav,.actions{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin:20px 0}nav button{background:white;color:#666}nav button.active{background:#ff5100;color:white}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.stat,.panel{background:white;border:1px solid #e2e5ea;border-radius:11px;padding:20px}.stat small{color:#747c85}.stat strong{display:block;font-size:25px;margin-top:12px}.panel{margin:20px 0}.overflow{overflow:auto}table{width:100%;border-collapse:collapse;white-space:nowrap;font-size:13px}td,th{padding:13px 10px;text-align:left;border-bottom:1px solid #eee}th{background:#f7f8fa;color:#68717c;font-size:12px}td button{font-size:11px;padding:7px;margin:2px}footer,.note{font-size:12px;color:#747c85;line-height:1.6}.warn{background:#fff1e5;padding:12px;border-radius:7px;color:#974714}dialog{width:min(520px,94vw);border:0;border-radius:14px;padding:25px;box-shadow:0 20px 80px #0003}dialog::backdrop{background:#17202b88}form label{margin:15px 0}form input,form select{width:100%}form .actions{justify-content:flex-end}#error{color:#b83223}#message{min-height:20px;color:#8a3d13;font-size:13px}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #254c87;outline-offset:3px}@media(max-width:700px){main{padding:15px}.stats{grid-template-columns:1fr 1fr}.stat{padding:15px}.stat strong{font-size:21px}header span{font-size:11px;max-width:130px;text-align:right}}@media(max-width:360px){.stats{grid-template-columns:1fr}}
 </style>
 <link rel="stylesheet" href="navegacion.css">
-<script src="vendor/lz-string.min.js"></script><script src="almacenamiento.js"></script></head>
+<script src="vendor/lz-string.min.js"></script><script src="almacenamiento.js"></script><script src="precarga.js"></script></head>
 <body>
 <header class="site-header"><a class="site-brand" href="index.html?view=home" aria-label="ACOSA · Inicio"><img src="assets/acosa-logo.png" alt="ACOSA" width="164" height="60"></a><span>Panel de presupuesto · USD</span></header>
 <nav id="module-nav" class="module-nav" aria-label="Navegación global de todos los países">
@@ -22,7 +22,7 @@
 <a href="carga.html" data-module="book">Cargar libro completo</a>
 </nav>
 <main>
-<p class="notice"><b>DEMOSTRACIÓN PÚBLICA.</b> Datos ficticios; no contiene tu Excel. Sin conexión a Meta ni cuentas de usuario. Los cambios se guardan solo en este navegador.</p>
+<p class="notice"><b>DATOS DEL LIBRO CA4.</b> Información del archivo CA4, organizada por país y mes. Sin conexión a Meta ni cuentas de usuario. Los cambios se guardan solo en este navegador.</p>
 <h1>Control de presupuesto digital</h1>
 
 <p class="note"><b>Sumas automáticas:</b> conjuntos → campañas → país. Edita los fondos propios y de marcas en cada conjunto; los totales se actualizan al guardar. Países y campañas sin conjuntos empiezan en $0.00.</p>
@@ -62,7 +62,9 @@
 </form>
 </dialog>
 <script>
+(async function(){
 'use strict';
+await ACOSASeed.require();
 
 const $=s=>document.querySelector(s);
 const KEY='acosa-demo-publica-1';
@@ -440,7 +442,7 @@ function render(){
   }
 
   if(data.bookMeta){
-    $('.notice').textContent='LIBRO CARGADO · Datos reales almacenados solo en este navegador. No se publicaron en GitHub ni se enviaron a una IA. Descarga un respaldo completo para conservarlos.';
+    $('.notice').textContent='LIBRO CA4 CARGADO · Datos reales del archivo. El libro inicial es público; los cambios que hagas se guardan en este navegador. No se envían a una IA. Descarga un respaldo completo para conservarlos.';
     document.querySelector('footer').textContent='Datos locales del libro CA4. Los planes Lester, Claude y Neno se consultan por separado. Descarga un respaldo completo desde Cargar libro completo.';
     const historical=monthlyCampaigns().some(c=>c.budgetBasis==='actual-spend');
     const planName={lester:'Presupuesto Lester',claude:'Propuesta Claude',neno:'Propuesta Neno'}[$('#budget-plan').value];
@@ -817,6 +819,7 @@ if(requestedView&&Object.hasOwn(titles,requestedView)){
   history.replaceState(null,'',cleanURL);
 }
 render();
+})().catch(error=>console.error(error.message));
 </script>
 </body>
 </html>

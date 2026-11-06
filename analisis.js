@@ -1,4 +1,6 @@
+(async function(){
 'use strict';
+await ACOSASeed.require();
 const $=s=>document.querySelector(s),KEY='acosa-analysis-v1';
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const norm=x=>String(x??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
@@ -78,3 +80,5 @@ try{
  }
 }catch{}
 render();
+
+})().catch(error=>console.error(error.message));

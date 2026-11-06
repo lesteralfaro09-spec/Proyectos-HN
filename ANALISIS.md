@@ -1,6 +1,6 @@
 # Análisis mensual y Presupuesto Lester
 
-Acceso desde `index.html` a `analisis.html`. La navegación operativa existente se conserva. Sin backend, cuentas, envío a IA ni servicios externos; los archivos se leen en el navegador. No se incluye ningún archivo ni importe del Excel privado en el repositorio.
+Acceso desde `index.html` a `analisis.html`. La navegación operativa existente se conserva. Sin backend, cuentas, envío a IA ni servicios externos; los archivos se leen en el navegador. El portal incluye una réplica pública del libro inicial en datos/ca4-inicial.json, a solicitud expresa del propietario. Las nuevas cargas y ediciones siguen siendo locales.
 
 ## Flujo
 
