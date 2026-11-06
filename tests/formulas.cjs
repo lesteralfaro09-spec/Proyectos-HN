@@ -1,0 +1,30 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const {Engine}=require('../formulas.js');
+const model=JSON.parse(fs.readFileSync(path.join(__dirname,'../datos/informe-ca4.json'),'utf8'));
+const engine=new Engine(model);let formulas=0;
+for(const sheet of model.sheets)for(const [address,cell]of Object.entries(sheet.cells)){
+ if(!cell.f)continue;
+ formulas++;
+ const result=engine.result(sheet.name,address);
+ assert.equal(result.error,null,sheet.name+'!'+address);
+ if(typeof cell.v==='number')assert(Math.abs(result.value-cell.v)<=Math.max(.00001,Math.abs(cell.v)*1e-9),sheet.name+'!'+address);
+ else if(cell.v===null)assert.equal(result.value,'',sheet.name+'!'+address);
+ else assert.equal(result.value,cell.v,sheet.name+'!'+address);
+}
+assert.equal(formulas,19835);
+const apps=new Engine(model,{'Estrategia Digital!I5':{v:10},'Estrategia Digital!M5':{v:2}});
+assert.equal(apps.get('Estrategia Digital','R5'),10);
+assert.equal(apps.get('Estrategia Digital','S5'),120);
+assert.equal(apps.get('Estrategia Digital','O5'),5);
+const budget=new Engine(model,{'HN · Honduras!AU24':{v:700}});
+assert.equal(budget.get('HN · Honduras','AY24'),1200);
+assert.equal(budget.get('HN · Honduras','AY51'),10700);
+const badRate=new Engine(model,{'Inicio!C14':{v:0}});
+assert.equal(badRate.result('Ventas HN','F4').error,'#DIV/0!');
+const unsupported=new Engine(model,{'Inicio!C14':{f:'=EXEC("command")'}});
+assert(unsupported.result('Inicio','C14').error.startsWith('#FUNCTION!'));
+const circular=new Engine(model,{'Inicio!C14':{f:'=C14'}});
+assert.equal(circular.result('Inicio','C14').error,'#CIRC!');
+console.log('PASS: all '+formulas+' formulas match source; Apps, Lester cross-sheet totals, zero FX, unsupported functions and circular references.');
