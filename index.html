@@ -8,7 +8,7 @@
 *{box-sizing:border-box}body{margin:0;background:#f5f6f8;color:#28313b;font:15px Arial,sans-serif}header{background:#ff5100;color:white;padding:24px 5%;display:flex;justify-content:space-between;align-items:center}header b{font-size:32px;letter-spacing:-2px}main{max-width:1250px;margin:auto;padding:24px}h1{font-size:27px}h2{font-size:19px}p{line-height:1.6}.notice{padding:14px;background:#fff1e5;border:1px solid #ffdcc3;border-radius:9px;font-size:13px}label{display:flex;flex-direction:column;gap:7px;font-size:13px}input,select,button{font:inherit;border-radius:7px;padding:10px;border:1px solid #d9dde3}input,select{background:white;min-width:0}button{cursor:pointer;background:#ff5100;color:white;border:0}button:hover{filter:brightness(.95)}button.secondary{background:white;color:#a23c0c;border:1px solid #e4d6ce}.filters,nav,.actions{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin:20px 0}nav button{background:white;color:#666}nav button.active{background:#ff5100;color:white}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.stat,.panel{background:white;border:1px solid #e2e5ea;border-radius:11px;padding:20px}.stat small{color:#747c85}.stat strong{display:block;font-size:25px;margin-top:12px}.panel{margin:20px 0}.overflow{overflow:auto}table{width:100%;border-collapse:collapse;white-space:nowrap;font-size:13px}td,th{padding:13px 10px;text-align:left;border-bottom:1px solid #eee}th{background:#f7f8fa;color:#68717c;font-size:12px}td button{font-size:11px;padding:7px;margin:2px}footer,.note{font-size:12px;color:#747c85;line-height:1.6}.warn{background:#fff1e5;padding:12px;border-radius:7px;color:#974714}dialog{width:min(520px,94vw);border:0;border-radius:14px;padding:25px;box-shadow:0 20px 80px #0003}dialog::backdrop{background:#17202b88}form label{margin:15px 0}form input,form select{width:100%}form .actions{justify-content:flex-end}#error{color:#b83223}#message{min-height:20px;color:#8a3d13;font-size:13px}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #254c87;outline-offset:3px}@media(max-width:700px){main{padding:15px}.stats{grid-template-columns:1fr 1fr}.stat{padding:15px}.stat strong{font-size:21px}header span{font-size:11px;max-width:130px;text-align:right}}@media(max-width:360px){.stats{grid-template-columns:1fr}}
 </style>
 <link rel="stylesheet" href="navegacion.css">
-</head>
+<script src="vendor/lz-string.min.js"></script><script src="almacenamiento.js"></script></head>
 <body>
 <header class="site-header"><a class="site-brand" href="index.html?view=home" aria-label="ACOSA · Inicio"><img src="assets/acosa-logo.png" alt="ACOSA" width="164" height="60"></a><span>Panel de presupuesto · USD</span></header>
 <nav id="module-nav" class="module-nav" aria-label="Navegación global de todos los países">
@@ -19,6 +19,7 @@
 <a href="index.html?view=brands" data-view="brands">Fondos de marcas</a>
 <a href="index.html?view=history" data-view="history">Histórico mensual</a>
 <a href="analisis.html" data-module="analysis">Análisis y Presupuesto Lester</a>
+<a href="carga.html" data-module="book">Cargar libro completo</a>
 </nav>
 <main>
 <p class="notice"><b>DEMOSTRACIÓN PÚBLICA.</b> Datos ficticios; no contiene tu Excel. Sin conexión a Meta ni cuentas de usuario. Los cambios se guardan solo en este navegador.</p>
@@ -28,6 +29,7 @@
 <div class="filters">
 <label>Mes<input id="month" type="month" value="2026-11"></label>
 <label>País<select id="country"></select></label>
+<label>Plan de presupuesto<select id="budget-plan"><option value="lester">Presupuesto Lester / histórico real</option><option value="claude">Propuesta Claude / histórico real</option><option value="neno">Propuesta Neno / histórico real</option></select></label>
 <label>Campañas del mes<select id="campaign-status"><option value="active">Solo activas</option><option value="inactive">Solo inactivas</option><option value="all">Todas · histórico</option></select></label>
 <button id="newCountry">＋ Agregar país</button>
 </div>
@@ -136,7 +138,7 @@ function valid(x){
 let data;
 
 try{
-  data=JSON.parse(localStorage.getItem(KEY));
+  data=ACOSAStorage.read(KEY);
   if(!valid(data))data=structuredClone(initial);
 }catch{
   data=structuredClone(initial);
@@ -163,7 +165,8 @@ const campaign=id=>data.campaigns.find(c=>c.id===id);
 
 // Los respaldos anteriores sin estado se interpretan como activos.
 const isActive=c=>c.active!==false;
-const monthlyCampaigns=()=>data.campaigns.filter(c=>
+const inPlan=c=>!c.scenario||c.scenario==='real'||c.scenario===$('#budget-plan').value;
+const monthlyCampaigns=()=>data.campaigns.filter(c=>inPlan(c)&&
   c.month===month()&&(!country()||c.country===country())
 );
 const selectedCampaigns=()=>monthlyCampaigns().filter(c=>
@@ -184,10 +187,23 @@ const results=ss=>{
 };
 
 function save(){
+  const previousMain=localStorage.getItem(KEY),previousAnalysis=localStorage.getItem('acosa-analysis-v1');
   try{
-    localStorage.setItem(KEY,JSON.stringify(data));
+    if(data.bookMeta){
+      const analysis=ACOSAStorage.read('acosa-analysis-v1');
+      if(analysis?.manual){
+        for(const s of data.sets){const c=campaign(s.campaign);if(c?.scenario!=='lester')continue;
+          let r=analysis.manual.find(r=>r.id===s.manualId);
+          if(!r&&!s.manualId){r={id:uid(),country:c.country,month:c.month,category:s.category||s.name,objective:c.objective,amount:s.own,note:'Presupuesto definido en conjuntos',updated:new Date().toISOString()};analysis.manual.push(r);s.manualId=r.id;}
+          if(r){r.amount=s.own;r.category=s.category||s.name;r.objective=c.objective;r.updated=new Date().toISOString();}
+        }
+        ACOSAStorage.write('acosa-analysis-v1',analysis);
+      }
+    }
+    ACOSAStorage.write(KEY,data);
     $('#message').textContent='Guardado en este navegador.';
   }catch{
+    try{if(previousMain===null)localStorage.removeItem(KEY);else localStorage.setItem(KEY,previousMain);if(previousAnalysis===null)localStorage.removeItem('acosa-analysis-v1');else localStorage.setItem('acosa-analysis-v1',previousAnalysis);}catch{}
     $('#message').textContent=
       'No se pudo guardar. Descarga un respaldo antes de cerrar.';
   }
@@ -337,7 +353,7 @@ function render(){
 
   if(view==='history'){
     const groups=new Map();
-    for(const c of data.campaigns.filter(c=>!country()||c.country===country())){
+    for(const c of data.campaigns.filter(c=>inPlan(c)&&(!country()||c.country===country()))){
       const key=c.month+'|'+c.country;
       if(!groups.has(key))groups.set(key,{month:c.month,country:c.country,campaigns:[]});
       groups.get(key).campaigns.push(c);
@@ -396,7 +412,7 @@ function render(){
       '</b> · Costo por mensaje: <b>'+
       (messages?money(spend/messages):'—')+
       '</b> · ROAS: <b>'+
-      (spend?(sum(rr,'value')/spend).toFixed(2)+'x':'—')+
+      (spend&&rr.some(r=>r.valueKnown!==false)?(sum(rr,'value')/spend).toFixed(2)+'x':'—')+
       '</b></p>'+
       table([
         'Fecha','País','Conjunto','Anuncio',
@@ -404,9 +420,9 @@ function render(){
       ],rr.map(r=>{
         const s=data.sets.find(s=>s.id===r.set);
         return [
-          esc(r.date),esc(name(campaign(s.campaign).country)),
+          esc(r.periodOnly?r.date.slice(0,7)+' · mes completo':r.date),esc(name(campaign(s.campaign).country)),
           esc(s.name),esc(r.ad),money(r.spend),
-          r.clicks,r.messages,r.purchases,money(r.value)
+          r.missingMetrics?.includes('clicks')?'—':r.clicks,r.messages,r.missingMetrics?.includes('purchases')?'—':r.purchases,r.valueKnown===false?'Sin dato':money(r.value)
         ];
       }));
   }
@@ -423,10 +439,21 @@ function render(){
       '. El presupuesto del país usa solo los fondos asignados en conjuntos. Los aportes registrados aquí son una referencia y no se suman otra vez.</p>';
   }
 
+  if(data.bookMeta){
+    $('.notice').textContent='LIBRO CARGADO · Datos reales almacenados solo en este navegador. No se publicaron en GitHub ni se enviaron a una IA. Descarga un respaldo completo para conservarlos.';
+    document.querySelector('footer').textContent='Datos locales del libro CA4. Los planes Lester, Claude y Neno se consultan por separado. Descarga un respaldo completo desde Cargar libro completo.';
+    const historical=monthlyCampaigns().some(c=>c.budgetBasis==='actual-spend');
+    const planName={lester:'Presupuesto Lester',claude:'Propuesta Claude',neno:'Propuesta Neno'}[$('#budget-plan').value];
+    html='<p class="scenario-note">'+(historical?
+      'Histórico real: los montos base corresponden a inversión ejecutada, no a presupuestos aprobados. Los resultados marcados como mes completo no tienen fecha diaria en el archivo.':
+      planName+(planName.startsWith('Propuesta')?' · propuesta del archivo, no aprobación automática.':'.')+' Las alternativas no se suman entre sí.')+'</p>'+html;
+    if(!historical&&!monthlyCampaigns().length)html='<p class="warn">No hay '+esc(planName)+' registrado para este país y mes. Revisa las propuestas separadas; no se inventa un presupuesto aprobado.</p>'+html;
+    if(historical){const labels=document.querySelectorAll('.stat small');if(labels[0])labels[0].textContent='Inversión ejecutada · base histórica';if(labels[2])labels[2].textContent='Total inversión histórica';if(labels[3])labels[3].textContent='Diferencia de inversión';}
+  }
   $('#content').innerHTML=html;
   try{
     sessionStorage.setItem(VIEW_KEY,JSON.stringify({
-      view,focus,month:month(),country:country(),status:$('#campaign-status').value
+      view,focus,month:month(),country:country(),status:$('#campaign-status').value,plan:$('#budget-plan').value
     }));
   }catch{
     // El panel sigue funcionando si el navegador bloquea este almacenamiento.
@@ -509,6 +536,7 @@ function openSet(id){
 
 function copyCampaign(id){
   const original=campaign(id);if(!original)return;
+  const destinationScenario=original.scenario==='real'?$('#budget-plan').value:original.scenario;
   const [year,m]=original.month.split('-').map(Number);
   const nextMonth=m===12?`${year+1}-01`:`${year}-${String(m+1).padStart(2,'0')}`;
   modal('Activar campaña en otro mes',
@@ -517,10 +545,10 @@ function copyCampaign(id){
     input('name','Nombre de la campaña',original.name),
     d=>{
       if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(d.month)||d.month===original.month)return fail('Selecciona un mes válido diferente al original.');
-      if(data.campaigns.some(c=>c.country===original.country&&c.month===d.month&&c.name.toLowerCase()===d.name.toLowerCase()))return fail('Ya existe esa campaña en el mes de destino. No se duplicó.');
+      if(data.campaigns.some(c=>c.scenario===destinationScenario&&c.country===original.country&&c.month===d.month&&c.name.toLowerCase()===d.name.toLowerCase()))return fail('Ya existe esa campaña en el mes de destino. No se duplicó.');
       const newId=uid();
-      data.campaigns.push({...original,id:newId,month:d.month,name:d.name,active:true,amount:0});
-      const copied=data.sets.filter(s=>s.campaign===original.id).map(s=>({...s,id:uid(),campaign:newId}));
+      data.campaigns.push({...original,id:newId,month:d.month,name:d.name,active:true,amount:0,scenario:destinationScenario,budgetBasis:'planned'});
+      const copied=data.sets.filter(s=>s.campaign===original.id).map(s=>{const {manualId,...values}=s;return {...values,id:uid(),campaign:newId};});
       data.sets.push(...copied);
       $('#month').value=d.month;$('#country').value=original.country;$('#campaign-status').value='active';focus='';view='campaigns';
       return true;
@@ -567,10 +595,10 @@ $('#add').onclick=()=>{
       objectiveField()+
       select('state','Estado en '+month(),[{id:'active',name:'Activa'},{id:'inactive',name:'Inactiva'}],'id','name'),
       d=>{
-        if(data.campaigns.some(c=>c.country===d.country&&c.month===month()&&c.name.toLowerCase()===d.name.toLowerCase()))return fail('Esa campaña ya existe en el país y mes seleccionados.');
+        if(data.campaigns.some(c=>inPlan(c)&&c.country===d.country&&c.month===month()&&c.name.toLowerCase()===d.name.toLowerCase()))return fail('Esa campaña ya existe en el país y mes seleccionados.');
         const {state,...values}=d;
         data.campaigns.push({
-          id:uid(),...values,month:month(),amount:0,active:state==='active'
+          id:uid(),...values,month:month(),amount:0,active:state==='active',scenario:$('#budget-plan').value,budgetBasis:'planned'
         });
         return true;
       },
@@ -708,6 +736,8 @@ $('#country').onchange=()=>{
   render();
 };
 
+$('#budget-plan').onchange=()=>{focus='';render();};
+
 $('#campaign-status').onchange=()=>{focus='';render();};
 
 $('#month').onchange=()=>{
@@ -760,6 +790,7 @@ try{
   const location=JSON.parse(sessionStorage.getItem(VIEW_KEY));
   if(location&&Object.hasOwn(titles,location.view)){
     view=location.view;
+    if(['lester','claude','neno'].includes(location.plan))$('#budget-plan').value=location.plan;
     if(['active','inactive','all'].includes(location.status))$('#campaign-status').value=location.status;
     if(/^\d{4}-(0[1-9]|1[0-2])$/.test(location.month)){
       $('#month').value=location.month;
